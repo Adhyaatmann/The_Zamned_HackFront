@@ -44,7 +44,7 @@ Modern digital subscriptions frequently rely on obscure billing narratives and s
 │   └── settings.jpg
 ├── .env
 ├── gemini_analyzer.py
-├── main.py
+├── zamn.py
 ├── requirements.txt
 └── README.md
 ```
@@ -119,5 +119,5 @@ GEMINI_API_KEY="your-gemini-api-key-here"
 
 ### 5. Run the App
 ```bash
-python main.py
+python zamn.py
 ```
