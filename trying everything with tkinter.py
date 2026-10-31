@@ -23,16 +23,17 @@ app.title("The Missing Rupee - Financial Discovery & Anti-Dark Patterns")
 app.grid_columnconfigure(1, weight=1)
 app.grid_rowconfigure(0, weight=1)
 
-# ==========================================
-# FETCH COMMITMENTS DATA
-# ==========================================
 try:
+    print("DEBUG: Fetching live data from Supabase & Gemini...")
     commitments_data = get_commitments_from_gemini()
-except Exception:
+    print(f"DEBUG: App received {len(commitments_data)} commitments.")
+except Exception as e:
+    print(f"❌ DEBUG: Exception during startup fetch: {e}")
     commitments_data = []
 
-# Fallback sample data if DB or Gemini call fails
+# Fallback triggered ONLY if fetch returns empty list
 if not commitments_data:
+    print("⚠️ DEBUG: Using hardcoded fallback commitments_data.")
     commitments_data = [
         {
             "name": "Netflix",
