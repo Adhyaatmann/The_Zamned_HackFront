@@ -29,7 +29,7 @@ Modern digital subscriptions frequently rely on obscure billing narratives and s
 
 - **Frontend / GUI**: `customtkinter`(modern desktop UI components), `Pillow` (image loading and asset rendering)[cite: 3]
 - **AI Analysis**: `google-genai`(Gemini API SDK for parsing bank statements)[cite: 2]
-- **Database & Driver**: `psycopg2-binary`(PostgreSQL client driver)[cite: 2, 3]
+- **Database & Driver**: `psycopg2-binary`(PostgreSQL client driver)[cite: 2, 3] and  `supabase `
 - **Configuration**: `python-dotenv`(management of local .env variables)[cite: 2, 3]
 
 ---
