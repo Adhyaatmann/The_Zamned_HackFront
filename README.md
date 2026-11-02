@@ -50,16 +50,15 @@ Modern digital subscriptions frequently rely on obscure billing narratives and s
 ```
 
 ---
+## 🗄️ Database Setup & Supabase Configuration
 
-## 🗄️ Database Setup (Supabase)
-
-**The Missing Rupee** relies on raw, unclassified bank transaction lines stored in a Supabase PostgreSQL database. The application does **not** use pre-flagged subscription tables; instead, Gemini AI analyzes raw descriptions, dates, and debit amounts directly from your `transactions` table.
+**The Missing Rupee** analyzes raw bank statement debits stored in PostgreSQL via Supabase. The exact database structure is flexible: while a default schema is provided below, you can adapt an existing table as long as your Python data fetcher maps transactions into three core fields: **date**, **description**, and **amount**.
 
 ---
 
-### 1. Create the `transactions` Table
+### 1. Recommended Table Schema
 
-Run the following SQL snippet in your **Supabase SQL Editor** (`SQL Editor -> New query`) to create the required table:
+Run this script in your **Supabase SQL Editor** (`SQL Editor -> New query`) to create the default table:
 
 ```sql
 -- Create the raw transactions table
@@ -72,14 +71,64 @@ CREATE TABLE IF NOT EXISTS transactions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Index for optimized querying by date and transaction type
+-- Index for fast querying by type and date
 CREATE INDEX IF NOT EXISTS idx_transactions_type_date 
 ON transactions(transaction_type, transaction_date DESC);
---
 
+```
+
+> **Custom Schema Flexibility:** If your database uses different column names (e.g., `tx_date` or `narration`), update the SQL query in `gemini_analyzer.py` inside `fetch_raw_transactions_from_db()` to alias your columns:
+> ```sql
+> SELECT tx_date::text AS date, narration AS description, total_amount::float AS amount 
+> FROM custom_table 
+> WHERE transaction_type = 'debit';
+> 
+> ```
+> 
+> 
 
 ---
+
+### 2. Sample Seed Data
+
+Insert this sample dataset into Supabase to verify recurring pattern detection and price hike alerts:
+
+```sql
+INSERT INTO transactions (transaction_date, description, amount, transaction_type) VALUES
+-- Price Hike Pattern (Netflix: ₹649 -> ₹799)
+('2026-03-15 08:00:00', 'ACH DEBIT PAYPAL *NETFLIX DIGI CA', 649.00, 'debit'),
+('2026-04-15 08:00:00', 'ACH DEBIT PAYPAL *NETFLIX DIGI CA', 799.00, 'debit'),
+
+-- Standard Monthly Commitments
+('2026-04-11 10:00:00', 'CULTFIT MEMBERSHIP BANGALORE', 999.00, 'debit'),
+('2026-05-10 10:00:00', 'CULTFIT MEMBERSHIP BANGALORE', 999.00, 'debit'),
+('2026-04-18 14:22:00', 'POS DEBIT OPENAI *CHATGPT SUBSCRIPTION', 1999.00, 'debit'),
+
+-- Annual Commitment
+('2026-05-07 16:30:00', 'AMZNPRIME ANNUAL RENEWAL', 1499.00, 'debit');
+
 ```
+You can also insert your own data based on the same format to test the model.
+
+---
+
+### 3. Connecting Supabase to `.env`
+
+1. Open your **Supabase Dashboard** --> **Project Settings** --> **Database**.
+2. Scroll to **Connection Strings** and choose **Transaction Pooler** (Port `6543`). *Using the pooler endpoint prevents local network IPv6 routing issues.*
+3. Copy your URI string and paste it into a `.env` file located in your project root:
+
+```env
+# .env
+
+# Supabase Connection String (Transaction Pooler - Port 6543)
+DATABASE_URL=postgresql://postgres.[YOUR-PROJECT-REF]:[YOUR-PASSWORD]@[aws-0-region.pooler.supabase.com:6543/postgres](https://aws-0-region.pooler.supabase.com:6543/postgres)
+
+# Google Gemini API Key
+GEMINI_API_KEY=your_gemini_api_key_here
+
+```
+---
 ## Getting Started & Installation
 
 ### 1. Prerequisites
@@ -113,7 +162,7 @@ DATABASE_URL="postgresql://<username>:<password>@<host>:<port>/<dbname>"
 GEMINI_API_KEY="your-gemini-api-key-here"
 ```
 
-> **Note**: Ensure the image files (`App Logo.jpeg`, `bell.png`, `profile.png`, `settings.jpg`) are placed inside the `assets/` folder[cite: 3].
+> **Note**: Ensure the image files (`App Logo.jpeg`, `bell.png`, `profile.png`, `settings.png`) are placed inside the `assets/` folder[cite: 3].
 
 ---
 
