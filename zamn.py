@@ -3,7 +3,7 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 from customtkinter import *
-from PIL import Image
+from PIL import Image, ImageDraw
 
 # Matplotlib & Tkinter Integration
 import matplotlib.pyplot as plt
@@ -32,6 +32,14 @@ app.title("The Missing Rupee - Financial Discovery & Anti-Dark Patterns")
 # Configure main window grid
 app.grid_columnconfigure(1, weight=1)
 app.grid_rowconfigure(0, weight=1)
+
+# Global variables for settings states
+current_theme_var = StringVar(value="Light")
+current_scale_var = StringVar(value="100%")
+settings_window = None
+
+# Set initial appearance mode
+set_appearance_mode("Light")
 
 # ==========================================
 # FETCH COMMITMENTS DATA
@@ -105,38 +113,193 @@ if not commitments_data:
 
 
 # ==========================================
-# ICON HELPER FUNCTION
+# IMAGE ROUNDING & DUAL ICON HELPER
 # ==========================================
-def load_icon(file_name, size=(24, 24)):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(base_dir, "assets", file_name)
+def make_rounded_image(image, radius=14):
+    if image is None:
+        return None
+    image = image.convert("RGBA")
+    mask = Image.new("L", image.size, 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle([(0, 0), image.size], radius=radius, fill=255)
+    rounded = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    rounded.paste(image, (0, 0), mask=mask)
+    return rounded
 
-    if os.path.exists(file_path):
-        raw_image = Image.open(file_path)
-        return CTkImage(light_image=raw_image, dark_image=raw_image, size=size)
+
+def load_icon(file_name, size=(24, 24), corner_radius=0):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    light_path = os.path.join(base_dir, "assets", file_name)
+
+    # Fallback between .png and .jpeg if needed
+    if not os.path.exists(light_path):
+        name_part, ext = os.path.splitext(file_name)
+        alt_ext = ".jpeg" if ext.lower() == ".png" else ".png"
+        alt_path = os.path.join(base_dir, "assets", name_part + alt_ext)
+        if os.path.exists(alt_path):
+            light_path = alt_path
+
+    name_part, ext = os.path.splitext(os.path.basename(light_path))
+    dark_file = f"{name_part}_dark{ext}"
+    dark_path = os.path.join(base_dir, "assets", dark_file)
+
+    light_img = Image.open(light_path) if os.path.exists(light_path) else None
+    dark_img = Image.open(dark_path) if os.path.exists(dark_path) else light_img
+
+    if light_img:
+        if corner_radius > 0:
+            light_img = make_rounded_image(light_img, corner_radius)
+            if dark_img and dark_img != light_img:
+                dark_img = make_rounded_image(dark_img, corner_radius)
+            else:
+                dark_img = light_img
+
+        return CTkImage(light_image=light_img, dark_image=dark_img, size=size)
     return None
+
+
+# ==========================================
+# SETTINGS MODAL & EVENT DEFERRAL
+# ==========================================
+def refresh_all_charts():
+    if 'trend_range_var' in globals():
+        update_trend_chart(trend_range_var.get())
+    if 'render_category_chart' in globals():
+        render_category_chart()
+
+
+def change_appearance_theme(choice):
+    set_appearance_mode(choice)
+    
+    if settings_window is not None and settings_window.winfo_exists():
+        settings_window.deiconify()
+        settings_window.lift()
+        settings_window.focus_force()
+
+    app.after(100, refresh_all_charts)
+
+
+def change_widget_scaling(choice):
+    scale_map = {"80%": 0.8, "90%": 0.9, "100%": 1.0, "110%": 1.1, "120%": 1.2}
+    scale_val = scale_map.get(choice, 1.0)
+    
+    set_widget_scaling(scale_val)
+
+    if settings_window is not None and settings_window.winfo_exists():
+        settings_window.deiconify()
+        settings_window.lift()
+        settings_window.focus_force()
+
+    app.after(100, refresh_all_charts)
+
+
+def open_settings_modal():
+    global settings_window
+
+    if settings_window is not None and settings_window.winfo_exists():
+        settings_window.deiconify()
+        settings_window.lift()
+        settings_window.focus_force()
+        return
+
+    settings_window = CTkToplevel(app, fg_color=("#F8FAFC", "#0F172A"))
+    settings_window.title("Preferences & Settings")
+    settings_window.geometry("440x450")
+    settings_window.minsize(400, 380)
+
+    settings_window.transient(app)
+    settings_window.lift()
+    settings_window.focus_force()
+
+    def on_close_settings():
+        global settings_window
+        if settings_window is not None:
+            settings_window.destroy()
+            settings_window = None
+
+    settings_window.protocol("WM_DELETE_WINDOW", on_close_settings)
+
+    # Scrollable wrapper container with valid theme color tuple
+    modal_scroll = CTkScrollableFrame(settings_window, fg_color=("#F8FAFC", "#0F172A"))
+    modal_scroll.pack(fill="both", expand=True, padx=10, pady=10)
+
+    # Title Banner with loaded settings icon
+    header = CTkFrame(modal_scroll, fg_color="transparent")
+    header.pack(fill="x", padx=10, pady=(10, 15))
+
+    title_box = CTkFrame(header, fg_color="transparent")
+    title_box.pack(anchor="w")
+
+    set_img = load_icon("settings.png", (22, 22))
+    if set_img:
+        icon_lbl = CTkLabel(title_box, text="", image=set_img)
+        icon_lbl.pack(side="left", padx=(0, 8))
+
+    CTkLabel(title_box, text="Preferences", font=("Arial", 20, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(side="left")
+    CTkLabel(header, text="Customize your app theme and text scaling.", font=("Arial", 12), text_color=("#64748B", "#94A3B8")).pack(anchor="w", pady=(2, 0))
+
+    # Container Card
+    container = CTkFrame(modal_scroll, fg_color=("#FFFFFF", "#1E293B"), corner_radius=12)
+    container.pack(fill="both", expand=True, padx=5, pady=(0, 10))
+
+    # --- SETTING 1: THEME SELECTOR ---
+    theme_frame = CTkFrame(container, fg_color="transparent")
+    theme_frame.pack(fill="x", padx=20, pady=(20, 15))
+
+    CTkLabel(theme_frame, text="Appearance Theme", font=("Arial", 13, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(anchor="w", pady=(0, 2))
+    CTkLabel(theme_frame, text="Choose between light, dark, or system mode.", font=("Arial", 11), text_color=("#64748B", "#94A3B8")).pack(anchor="w", pady=(0, 8))
+
+    theme_segmented = CTkSegmentedButton(
+        theme_frame,
+        values=["Light", "Dark", "System"],
+        variable=current_theme_var,
+        command=change_appearance_theme,
+        font=("Arial", 12, "bold"),
+        height=32,
+    )
+    theme_segmented.pack(fill="x")
+
+    # Divider
+    CTkFrame(container, fg_color=("#E2E8F0", "#334155"), height=1).pack(fill="x", padx=20, pady=5)
+
+    # --- SETTING 2: FONT & UI SCALING ---
+    scale_frame = CTkFrame(container, fg_color="transparent")
+    scale_frame.pack(fill="x", padx=20, pady=(15, 20))
+
+    CTkLabel(scale_frame, text="Font & UI Scaling", font=("Arial", 13, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(anchor="w", pady=(0, 2))
+    CTkLabel(scale_frame, text="Adjust widget padding and typography size.", font=("Arial", 11), text_color=("#64748B", "#94A3B8")).pack(anchor="w", pady=(0, 8))
+
+    scale_segmented = CTkSegmentedButton(
+        scale_frame,
+        values=["80%", "90%", "100%", "110%", "120%"],
+        variable=current_scale_var,
+        command=change_widget_scaling,
+        font=("Arial", 12, "bold"),
+        height=32,
+    )
+    scale_segmented.pack(fill="x")
 
 
 # ==========================================
 # 1. SIDEBAR FRAME
 # ==========================================
-sidebar = CTkFrame(app, width=200, corner_radius=0, fg_color="#FFFFFF")
+sidebar = CTkFrame(app, width=200, corner_radius=0, fg_color=("#FFFFFF", "#1E293B"))
 sidebar.grid(row=0, column=0, sticky="nsew")
 
-logo_img = load_icon("App Logo.jpeg", (160, 100))
+logo_img = load_icon("App Logo.png", (160, 100), corner_radius=14)
 logo = CTkLabel(
     sidebar,
     image=logo_img,
     text="The Missing Rupee" if not logo_img else "",
     font=("Arial", 16, "bold"),
-    text_color="#343C6A",
+    text_color=("#343C6A", "#F8FAFC"),
 )
 logo.pack(pady=25, padx=15)
 
 # ==========================================
 # 2. CONTENT CONTAINER
 # ==========================================
-content_area = CTkFrame(app, fg_color="#F8FAFC", corner_radius=0)
+content_area = CTkFrame(app, fg_color=("#F8FAFC", "#0F172A"), corner_radius=0)
 content_area.grid(row=0, column=1, sticky="nsew")
 
 content_area.grid_columnconfigure(0, weight=1)
@@ -146,14 +309,14 @@ content_area.grid_rowconfigure(1, weight=1)
 # ==========================================
 # 2.1 TOP HEADER BAR
 # ==========================================
-header_frame = CTkFrame(content_area, fg_color="#FFFFFF", height=70, corner_radius=0)
+header_frame = CTkFrame(content_area, fg_color=("#FFFFFF", "#1E293B"), height=70, corner_radius=0)
 header_frame.grid(row=0, column=0, sticky="ew")
 
 header_title = CTkLabel(
     header_frame,
     text="Overview",
     font=("Arial", 22, "bold"),
-    text_color="#343C6A",
+    text_color=("#343C6A", "#F8FAFC"),
 )
 header_title.pack(side="left", padx=25, pady=20)
 
@@ -167,10 +330,10 @@ search_entry = CTkEntry(
     width=220,
     height=40,
     corner_radius=20,
-    fg_color="#F5F7FA",
+    fg_color=("#F5F7FA", "#334155"),
     border_width=0,
-    text_color="#232323",
-    placeholder_text_color="#8BA3CB",
+    text_color=("#232323", "#F8FAFC"),
+    placeholder_text_color=("#8BA3CB", "#94A3B8"),
 )
 search_entry.pack(side="left", padx=(0, 10))
 
@@ -182,9 +345,10 @@ settings_btn = CTkButton(
     width=40,
     height=40,
     corner_radius=20,
-    fg_color="#F5F7FA",
-    hover_color="#E0E7FF",
-    text_color="#718EBF",
+    fg_color=("#F5F7FA", "#334155"),
+    hover_color=("#E0E7FF", "#475569"),
+    text_color=("#718EBF", "#F8FAFC"),
+    command=open_settings_modal,
 )
 settings_btn.pack(side="left", padx=(0, 10))
 
@@ -196,8 +360,8 @@ notification_btn = CTkButton(
     width=40,
     height=40,
     corner_radius=20,
-    fg_color="#FEF5F5",
-    hover_color="#FFE5E5",
+    fg_color=("#FEF5F5", "#334155"),
+    hover_color=("#FFE5E5", "#475569"),
     text_color="#FF4D4F",
 )
 notification_btn.pack(side="left", padx=(0, 10))
@@ -222,11 +386,11 @@ screens_container.grid_columnconfigure(0, weight=1)
 screens_container.grid_rowconfigure(0, weight=1)
 
 # --- SCREEN 1: DASHBOARD ---
-screen_dashboard = CTkScrollableFrame(screens_container, fg_color="transparent")
+screen_dashboard = CTkScrollableFrame(screens_container, fg_color=("#F8FAFC", "#0F172A"))
 
-CTkLabel(screen_dashboard, text="OVERVIEW", font=("Arial", 11, "bold"), text_color="#94A3B8").pack(anchor="w", pady=(0, 2))
-CTkLabel(screen_dashboard, text="Your money, uncovered.", font=("Arial", 26, "bold"), text_color="#0F172A").pack(anchor="w", pady=(0, 2))
-CTkLabel(screen_dashboard, text="A clear view of the recurring payments quietly leaving your account.", font=("Arial", 13), text_color="#64748B").pack(anchor="w", pady=(0, 15))
+CTkLabel(screen_dashboard, text="OVERVIEW", font=("Arial", 11, "bold"), text_color=("#94A3B8", "#64748B")).pack(anchor="w", pady=(0, 2))
+CTkLabel(screen_dashboard, text="Your money, uncovered.", font=("Arial", 26, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(anchor="w", pady=(0, 2))
+CTkLabel(screen_dashboard, text="A clear view of the recurring payments quietly leaving your account.", font=("Arial", 13), text_color=("#64748B", "#94A3B8")).pack(anchor="w", pady=(0, 15))
 
 
 def calculate_dashboard_metrics(commitments):
@@ -266,28 +430,41 @@ def calculate_dashboard_metrics(commitments):
     }
 
 
-def create_card(parent, icon_symbol, icon_bg, label_text, value_text, footer_text):
-    card = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=16)
+def create_card(parent, icon_filename, default_symbol, icon_bg, label_text, value_text, footer_text):
+    card = CTkFrame(parent, fg_color=("#FFFFFF", "#1E293B"), corner_radius=16)
 
-    icon_badge = CTkLabel(
-        card,
-        text=icon_symbol,
-        font=("Arial", 16, "bold"),
-        fg_color=icon_bg,
-        text_color="#0F172A",
-        width=36,
-        height=36,
-        corner_radius=10,
-    )
+    img_icon = load_icon(icon_filename, (20, 20)) if icon_filename else None
+
+    if img_icon:
+        icon_badge = CTkLabel(
+            card,
+            text="",
+            image=img_icon,
+            fg_color=icon_bg,
+            width=36,
+            height=36,
+            corner_radius=10,
+        )
+    else:
+        icon_badge = CTkLabel(
+            card,
+            text=default_symbol,
+            font=("Arial", 16, "bold"),
+            fg_color=icon_bg,
+            text_color="#0F172A",
+            width=36,
+            height=36,
+            corner_radius=10,
+        )
     icon_badge.pack(anchor="w", padx=20, pady=(15, 10))
 
-    lbl = CTkLabel(card, text=label_text, font=("Arial", 12), text_color="#64748B")
+    lbl = CTkLabel(card, text=label_text, font=("Arial", 12), text_color=("#64748B", "#94A3B8"))
     lbl.pack(anchor="w", padx=20, pady=(0, 4))
 
-    val = CTkLabel(card, text=value_text, font=("Arial", 24, "bold"), text_color="#0F172A")
+    val = CTkLabel(card, text=value_text, font=("Arial", 24, "bold"), text_color=("#0F172A", "#F8FAFC"))
     val.pack(anchor="w", padx=20, pady=(0, 4))
 
-    foot = CTkLabel(card, text=footer_text, font=("Arial", 11), text_color="#94A3B8")
+    foot = CTkLabel(card, text=footer_text, font=("Arial", 11), text_color=("#94A3B8", "#64748B"))
     foot.pack(anchor="w", padx=20, pady=(0, 15))
 
     return card
@@ -301,13 +478,13 @@ cards_frame.pack(fill="x", pady=(0, 15))
 for i in range(3):
     cards_frame.grid_columnconfigure(i, weight=1)
 
-card1 = create_card(cards_frame, "🔄", "#E2E8F0", "Monthly recurring spend", metrics["monthly_str"], "Across identified commitments")
+card1 = create_card(cards_frame, "recurring.png", "🔄", "#E2E8F0", "Monthly recurring spend", metrics["monthly_str"], "Across identified commitments")
 card1.grid(row=0, column=0, padx=(0, 10), sticky="ew")
 
-card2 = create_card(cards_frame, "🐷", "#DCFCE7", "Annual commitment", metrics["annual_str"], "Your recurring baseline")
+card2 = create_card(cards_frame, "annual.png", "₹", "#DCFCE7", "Annual commitment", metrics["annual_str"], "Your recurring baseline")
 card2.grid(row=0, column=1, padx=5, sticky="ew")
 
-card3 = create_card(cards_frame, "✓", "#E0F2FE", "Active subscriptions", metrics["active_str"], metrics["merchants_footer"])
+card3 = create_card(cards_frame, "subscriptions.png", "✓", "#E0F2FE", "Active subscriptions", metrics["active_str"], metrics["merchants_footer"])
 card3.grid(row=0, column=2, padx=(10, 0), sticky="ew")
 
 # --- DASHBOARD MATPLOTLIB CHARTS FRAME ---
@@ -316,21 +493,15 @@ charts_frame.pack(fill="x", pady=(5, 10))
 charts_frame.grid_columnconfigure(0, weight=3)
 charts_frame.grid_columnconfigure(1, weight=2)
 
-# --- CHART 1: RECURRING SPEND TREND ---
-chart1_card = CTkFrame(charts_frame, fg_color="#FFFFFF", corner_radius=16)
+# CHART 1: RECURRING SPEND TREND
+chart1_card = CTkFrame(charts_frame, fg_color=("#FFFFFF", "#1E293B"), corner_radius=16)
 chart1_card.grid(row=0, column=0, padx=(0, 10), sticky="nsew")
 
 chart1_header = CTkFrame(chart1_card, fg_color="transparent")
 chart1_header.pack(fill="x", padx=20, pady=(15, 2))
 
-CTkLabel(
-    chart1_header,
-    text="Recurring spend trend",
-    font=("Arial", 15, "bold"),
-    text_color="#0F172A",
-).pack(side="left")
+CTkLabel(chart1_header, text="Recurring spend trend", font=("Arial", 15, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(side="left")
 
-# Range Selector Dropdown
 trend_range_var = StringVar(value="Last 6 months")
 trend_dropdown = CTkOptionMenu(
     chart1_header,
@@ -340,47 +511,29 @@ trend_dropdown = CTkOptionMenu(
     width=125,
     height=28,
     corner_radius=6,
-    fg_color="#F1F5F9",
-    text_color="#334155",
-    button_color="#F1F5F9",
-    button_hover_color="#E2E8F0",
-    dropdown_fg_color="#FFFFFF",
-    dropdown_text_color="#0F172A",
+    fg_color=("#F1F5F9", "#334155"),
+    text_color=("#334155", "#F8FAFC"),
+    button_color=("#F1F5F9", "#334155"),
+    button_hover_color=("#E2E8F0", "#475569"),
+    dropdown_fg_color=("#FFFFFF", "#1E293B"),
+    dropdown_text_color=("#0F172A", "#F8FAFC"),
     command=lambda choice: update_trend_chart(choice),
 )
 trend_dropdown.pack(side="right")
 
-CTkLabel(
-    chart1_card,
-    text="Monthly run-rate from detected commitments",
-    font=("Arial", 11),
-    text_color="#94A3B8",
-).pack(anchor="w", padx=20, pady=(0, 10))
+CTkLabel(chart1_card, text="Monthly run-rate from detected commitments", font=("Arial", 11), text_color=("#94A3B8", "#64748B")).pack(anchor="w", padx=20, pady=(0, 10))
 
-# Aggregate Monthly Data
 all_monthly_sums = {}
 for item in commitments_data:
     for h in item.get("history", []):
         m_key = h["date"][:7]
-        raw_val = float(
-            str(h["amount"]).replace("₹", "").replace(",", "").strip() or 0
-        )
+        raw_val = float(str(h["amount"]).replace("₹", "").replace(",", "").strip() or 0)
         all_monthly_sums[m_key] = all_monthly_sums.get(m_key, 0.0) + raw_val
 
 if not all_monthly_sums:
-    all_monthly_sums = {
-        "2025-03": 649.0,
-        "2025-04": 649.0,
-        "2025-05": 1648.0,
-        "2025-06": 1648.0,
-        "2025-07": 1798.0,
-        "2025-08": 1798.0,
-        "2025-09": 999.0,
-    }
+    all_monthly_sums = {"2025-03": 649.0, "2025-04": 649.0, "2025-05": 1648.0, "2025-06": 1648.0, "2025-07": 1798.0, "2025-08": 1798.0, "2025-09": 999.0}
 
 fig1, ax1 = plt.subplots(figsize=(5.5, 2.6), dpi=100)
-fig1.patch.set_facecolor("#FFFFFF")
-ax1.set_facecolor("#FFFFFF")
 
 canvas1 = FigureCanvasTkAgg(fig1, master=chart1_card)
 canvas1.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -391,21 +544,17 @@ annot1 = ax1.annotate(
     xytext=(15, 15),
     textcoords="offset points",
     bbox=dict(boxstyle="round,pad=0.5", fc="#FFFFFF", ec="#CBD5E1", lw=1),
-    arrowprops=dict(
-        arrowstyle="->", connectionstyle="arc3,rad=0", color="#10B981"
-    ),
+    arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0", color="#10B981"),
     fontsize=9,
     fontweight="bold",
     color="#0F172A",
 )
 annot1.set_visible(False)
 
-# Track current filtered dataset for hover callback
 current_trend_data = {"months": [], "vals": [], "sc": None, "max_val": 1000}
 
 
 def format_month_label(m_str):
-    """Converts '2025-04' to 'Apr ''25'"""
     try:
         dt = datetime.strptime(m_str, "%Y-%m")
         return dt.strftime("%b '%y")
@@ -417,48 +566,53 @@ def update_trend_chart(range_choice):
     ax1.clear()
     annot1.set_visible(False)
 
+    is_dark = get_appearance_mode().lower() == "dark"
+    bg_color = "#1E293B" if is_dark else "#FFFFFF"
+    text_color = "#F8FAFC" if is_dark else "#0F172A"
+    subtext_color = "#94A3B8" if is_dark else "#64748B"
+    grid_color = "#334155" if is_dark else "#E2E8F0"
+
+    fig1.patch.set_facecolor(bg_color)
+    ax1.set_facecolor(bg_color)
+
+    annot1.get_bbox_patch().set_facecolor(bg_color)
+    annot1.get_bbox_patch().set_edgecolor("#475569" if is_dark else "#CBD5E1")
+    annot1.set_color(text_color)
+
     sorted_all = sorted(all_monthly_sums.keys())
 
     if range_choice == "Last 6 months":
         filtered_keys = sorted_all[-6:]
     elif range_choice == "Last 12 months":
         filtered_keys = sorted_all[-12:]
-    else:  # 'All time'
+    else:
         filtered_keys = sorted_all
 
     m_labels = [format_month_label(k) for k in filtered_keys]
     s_vals = [all_monthly_sums[k] for k in filtered_keys]
     x_idx = np.arange(len(filtered_keys))
 
-    ax1.plot(x_idx, s_vals, color="#10B981", linewidth=2.5)
-    ax1.fill_between(x_idx, s_vals, color="#10B981", alpha=0.10)
-    sc_scatter = ax1.scatter(x_idx, s_vals, color="#10B981", s=35, zorder=5)
+    ax1.plot(x_idx, s_vals, color='#10B981', linewidth=2.5)
+    ax1.fill_between(x_idx, s_vals, color='#10B981', alpha=0.15)
+    sc_scatter = ax1.scatter(x_idx, s_vals, color='#10B981', s=35, zorder=5)
 
     max_v = max(s_vals) if s_vals else 1000
     ax1.set_ylim(bottom=0, top=max_v * 1.35)
     ax1.set_xlim(-0.4, len(x_idx) - 0.6 + 0.4)
 
-    # Format Ticks & Optional Label Rotation for long ranges
     ax1.set_xticks(x_idx)
-
-    # If showing >8 months, step ticks or rotate slightly
     rotation_angle = 30 if len(filtered_keys) > 8 else 0
-    ax1.set_xticklabels(
-        m_labels, fontsize=8, color="#64748B", rotation=rotation_angle
-    )
-    ax1.yaxis.set_major_formatter(
-        FuncFormatter(lambda val, pos: f"₹{int(val):,}")
-    )
-    ax1.tick_params(axis="y", labelsize=8, labelcolor="#64748B")
+    ax1.set_xticklabels(m_labels, fontsize=8, color=subtext_color, rotation=rotation_angle)
+    ax1.yaxis.set_major_formatter(FuncFormatter(lambda val, pos: f"₹{int(val):,}"))
+    ax1.tick_params(axis='y', labelsize=8, labelcolor=subtext_color)
 
-    ax1.spines["top"].set_visible(False)
-    ax1.spines["right"].set_visible(False)
-    ax1.spines["left"].set_color("#E2E8F0")
-    ax1.spines["bottom"].set_color("#E2E8F0")
-    ax1.grid(axis="y", linestyle="--", alpha=0.3, color="#E2E8F0")
+    ax1.spines['top'].set_visible(False)
+    ax1.spines['right'].set_visible(False)
+    ax1.spines['left'].set_color(grid_color)
+    ax1.spines['bottom'].set_color(grid_color)
+    ax1.grid(axis='y', linestyle='--', alpha=0.3, color=grid_color)
     fig1.tight_layout()
 
-    # Re-attach annotation box to new axes frame
     ax1.add_artist(annot1)
 
     current_trend_data["months"] = filtered_keys
@@ -481,13 +635,8 @@ def hover_line(event):
             vals_list = current_trend_data["vals"]
             max_v = current_trend_data["max_val"]
 
-            # Calculate relative position across the chart timeline (0.0 to 1.0)
             x_ratio = idx / max(1, len(months_list) - 1)
-
-            # Flip left (-115px) whenever point is in the right 30% of the canvas
             offset_x = -115 if x_ratio > 0.70 else 15
-
-            # Flip down (-35px) whenever point is near the top of the canvas
             offset_y = -35 if pos[1] > (max_v * 0.75) else 15
 
             annot1.set_position((offset_x, offset_y))
@@ -502,37 +651,20 @@ def hover_line(event):
 
 
 canvas1.mpl_connect("motion_notify_event", hover_line)
-update_trend_chart("Last 6 months")
 
-# --- CHART 2: WHERE IT GOES ---
-chart2_card = CTkFrame(charts_frame, fg_color="#FFFFFF", corner_radius=16)
+# CHART 2: WHERE IT GOES
+chart2_card = CTkFrame(charts_frame, fg_color=("#FFFFFF", "#1E293B"), corner_radius=16)
 chart2_card.grid(row=0, column=1, padx=(10, 0), sticky="nsew")
 
-CTkLabel(
-    chart2_card,
-    text="Where it goes",
-    font=("Arial", 15, "bold"),
-    text_color="#0F172A",
-).pack(anchor="w", padx=20, pady=(15, 2))
-CTkLabel(
-    chart2_card,
-    text="Monthly by category",
-    font=("Arial", 11),
-    text_color="#94A3B8",
-).pack(anchor="w", padx=20, pady=(0, 10))
+CTkLabel(chart2_card, text="Where it goes", font=("Arial", 15, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(anchor="w", padx=20, pady=(15, 2))
+CTkLabel(chart2_card, text="Monthly by category", font=("Arial", 11), text_color=("#94A3B8", "#64748B")).pack(anchor="w", padx=20, pady=(0, 10))
 
 cat_totals = {}
 for item in commitments_data:
     cat = item.get("category", "Utilities")
-    raw_val = float(
-        str(item.get("amount", "0")).replace("₹", "").replace(",", "").strip() or 0
-    )
+    raw_val = float(str(item.get("amount", "0")).replace("₹", "").replace(",", "").strip() or 0)
     freq = str(item.get("frequency", "monthly")).lower()
-    m_val = (
-        raw_val
-        if freq == "monthly"
-        else (raw_val / 12.0 if freq == "annual" else raw_val / 3.0)
-    )
+    m_val = raw_val if freq == "monthly" else (raw_val / 12.0 if freq == "annual" else raw_val / 3.0)
     cat_totals[cat] = cat_totals.get(cat, 0.0) + m_val
 
 categories = list(cat_totals.keys())
@@ -540,28 +672,8 @@ cat_amounts = [cat_totals[c] for c in categories]
 max_cat_amt = max(cat_amounts) if cat_amounts else 1000
 
 fig2, ax2 = plt.subplots(figsize=(4.2, 2.6), dpi=100)
-fig2.patch.set_facecolor("#FFFFFF")
-ax2.set_facecolor("#FFFFFF")
-
-y_pos = np.arange(len(categories))
-bars = ax2.barh(
-    y_pos, cat_amounts, height=0.45, color="#1E293B", edgecolor="none"
-)
-
-# Fix: Add 35% right headroom so long bars leave space for tooltips
-ax2.set_xlim(left=0, right=max_cat_amt * 1.35)
-
-ax2.set_yticks(y_pos)
-ax2.set_yticklabels(categories, fontsize=9, color="#475569")
-ax2.tick_params(axis="y", pad=12)
-
-ax2.invert_yaxis()
-ax2.spines["top"].set_visible(False)
-ax2.spines["right"].set_visible(False)
-ax2.spines["left"].set_visible(False)
-ax2.spines["bottom"].set_visible(False)
-ax2.xaxis.set_visible(False)
-fig2.tight_layout()
+canvas2 = FigureCanvasTkAgg(fig2, master=chart2_card)
+canvas2.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
 annot2 = ax2.annotate(
     "",
@@ -575,8 +687,45 @@ annot2 = ax2.annotate(
 )
 annot2.set_visible(False)
 
-canvas2 = FigureCanvasTkAgg(fig2, master=chart2_card)
-canvas2.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=(0, 10))
+bars = []
+
+
+def render_category_chart():
+    global bars
+    ax2.clear()
+    annot2.set_visible(False)
+
+    is_dark = get_appearance_mode().lower() == "dark"
+    bg_color = "#1E293B" if is_dark else "#FFFFFF"
+    bar_color = "#38BDF8" if is_dark else "#1E293B"
+    text_color = "#F8FAFC" if is_dark else "#0F172A"
+    subtext_color = "#CBD5E1" if is_dark else "#475569"
+
+    fig2.patch.set_facecolor(bg_color)
+    ax2.set_facecolor(bg_color)
+
+    annot2.get_bbox_patch().set_facecolor(bg_color)
+    annot2.get_bbox_patch().set_edgecolor("#475569" if is_dark else "#CBD5E1")
+    annot2.set_color(text_color)
+
+    y_pos = np.arange(len(categories))
+    bars = ax2.barh(y_pos, cat_amounts, height=0.45, color=bar_color, edgecolor="none")
+
+    ax2.set_xlim(left=0, right=max_cat_amt * 1.35)
+    ax2.set_yticks(y_pos)
+    ax2.set_yticklabels(categories, fontsize=9, color=subtext_color)
+    ax2.tick_params(axis="y", pad=12)
+
+    ax2.invert_yaxis()
+    ax2.spines["top"].set_visible(False)
+    ax2.spines["right"].set_visible(False)
+    ax2.spines["left"].set_visible(False)
+    ax2.spines["bottom"].set_visible(False)
+    ax2.xaxis.set_visible(False)
+    fig2.tight_layout()
+
+    ax2.add_artist(annot2)
+    canvas2.draw_idle()
 
 
 def hover_bar(event):
@@ -587,7 +736,6 @@ def hover_bar(event):
                 x = bar.get_width()
                 annot2.xy = (x, y)
 
-                # Fix: Smart left-flip if bar extends past 65% of right chart area
                 if x > (max_cat_amt * 0.65):
                     annot2.set_position((-115, -10))
                 else:
@@ -605,6 +753,10 @@ def hover_bar(event):
 
 canvas2.mpl_connect("motion_notify_event", hover_bar)
 
+# Initial chart renders
+update_trend_chart("Last 6 months")
+render_category_chart()
+
 
 # ==========================================
 # --- SCREEN 2: TRANSACTIONS ---
@@ -614,13 +766,13 @@ screen_transactions = CTkFrame(screens_container, fg_color="transparent")
 tx_list_container = CTkFrame(screen_transactions, fg_color="transparent")
 tx_list_container.pack(fill="both", expand=True)
 
-tx_details_container = CTkScrollableFrame(screen_transactions, fg_color="transparent")
+tx_details_container = CTkScrollableFrame(screen_transactions, fg_color=("#F8FAFC", "#0F172A"))
 
-CTkLabel(tx_list_container, text="DISCOVERY", font=("Arial", 11, "bold"), text_color="#94A3B8").pack(anchor="w", pady=(0, 2))
+CTkLabel(tx_list_container, text="DISCOVERY", font=("Arial", 11, "bold"), text_color=("#94A3B8", "#64748B")).pack(anchor="w", pady=(0, 2))
 top_title_frame = CTkFrame(tx_list_container, fg_color="transparent")
 top_title_frame.pack(fill="x", pady=(0, 2))
-CTkLabel(top_title_frame, text="All commitments", font=("Arial", 26, "bold"), text_color="#0F172A").pack(side="left", anchor="w")
-CTkLabel(tx_list_container, text="Every recurring payment we found in your synthetic transaction history.", font=("Arial", 13), text_color="#64748B").pack(anchor="w", pady=(0, 15))
+CTkLabel(top_title_frame, text="All commitments", font=("Arial", 26, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(side="left", anchor="w")
+CTkLabel(tx_list_container, text="Every recurring payment we found in your synthetic transaction history.", font=("Arial", 13), text_color=("#64748B", "#94A3B8")).pack(anchor="w", pady=(0, 15))
 
 filter_frame = CTkFrame(tx_list_container, fg_color="transparent")
 filter_frame.pack(fill="x", pady=(0, 15))
@@ -636,23 +788,49 @@ tx_search_entry = CTkEntry(
     font=("Arial", 12),
     height=38,
     corner_radius=8,
-    fg_color="#FFFFFF",
+    fg_color=("#FFFFFF", "#1E293B"),
     border_width=1,
-    border_color="#E2E8F0",
-    text_color="#0F172A",
-    placeholder_text_color="#94A3B8",
+    border_color=("#E2E8F0", "#334155"),
+    text_color=("#0F172A", "#F8FAFC"),
+    placeholder_text_color=("#94A3B8", "#64748B"),
 )
 tx_search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
 category_options = ["All categories", "Education", "Entertainment", "Health", "Insurance", "Productivity", "Shopping", "Utilities"]
-category_dropdown = CTkOptionMenu(filter_frame, values=category_options, variable=category_var, font=("Arial", 12), height=38, corner_radius=8, fg_color="#FFFFFF", text_color="#334155", button_color="#FFFFFF", button_hover_color="#F1F5F9", dropdown_fg_color="#FFFFFF", dropdown_text_color="#0F172A")
+category_dropdown = CTkOptionMenu(
+    filter_frame,
+    values=category_options,
+    variable=category_var,
+    font=("Arial", 12),
+    height=38,
+    corner_radius=8,
+    fg_color=("#FFFFFF", "#1E293B"),
+    text_color=("#334155", "#F8FAFC"),
+    button_color=("#FFFFFF", "#1E293B"),
+    button_hover_color=("#F1F5F9", "#334155"),
+    dropdown_fg_color=("#FFFFFF", "#1E293B"),
+    dropdown_text_color=("#0F172A", "#F8FAFC"),
+)
 category_dropdown.pack(side="left", padx=(0, 10))
 
 frequency_options = ["All frequencies", "annual", "monthly", "quarterly"]
-frequency_dropdown = CTkOptionMenu(filter_frame, values=frequency_options, variable=frequency_var, font=("Arial", 12), height=38, corner_radius=8, fg_color="#FFFFFF", text_color="#334155", button_color="#FFFFFF", button_hover_color="#F1F5F9", dropdown_fg_color="#FFFFFF", dropdown_text_color="#0F172A")
+frequency_dropdown = CTkOptionMenu(
+    filter_frame,
+    values=frequency_options,
+    variable=frequency_var,
+    font=("Arial", 12),
+    height=38,
+    corner_radius=8,
+    fg_color=("#FFFFFF", "#1E293B"),
+    text_color=("#334155", "#F8FAFC"),
+    button_color=("#FFFFFF", "#1E293B"),
+    button_hover_color=("#F1F5F9", "#334155"),
+    dropdown_fg_color=("#FFFFFF", "#1E293B"),
+    dropdown_text_color=("#0F172A", "#F8FAFC"),
+)
 frequency_dropdown.pack(side="left", padx=(0, 15))
 
-count_label = CTkLabel(filter_frame, text="0 found", font=("Arial", 12), text_color="#64748B")
+count_label = CTkLabel(filter_frame, text="0 found", font=("Arial", 12), text_color=("#64748B", "#94A3B8"))
 count_label.pack(side="left")
 
 headers_frame = CTkFrame(tx_list_container, fg_color="transparent")
@@ -662,12 +840,12 @@ headers_frame.grid_columnconfigure(1, weight=3)
 headers_frame.grid_columnconfigure(2, weight=3)
 headers_frame.grid_columnconfigure(3, weight=2)
 
-CTkLabel(headers_frame, text="MERCHANT", font=("Arial", 11, "bold"), text_color="#94A3B8").grid(row=0, column=0, sticky="w")
-CTkLabel(headers_frame, text="AMOUNT / FREQUENCY", font=("Arial", 11, "bold"), text_color="#94A3B8").grid(row=0, column=1, sticky="w")
-CTkLabel(headers_frame, text="LAST PAYMENT", font=("Arial", 11, "bold"), text_color="#94A3B8").grid(row=0, column=2, sticky="w")
-CTkLabel(headers_frame, text="CONFIDENCE", font=("Arial", 11, "bold"), text_color="#94A3B8").grid(row=0, column=3, sticky="e")
+CTkLabel(headers_frame, text="MERCHANT", font=("Arial", 11, "bold"), text_color=("#94A3B8", "#64748B")).grid(row=0, column=0, sticky="w")
+CTkLabel(headers_frame, text="AMOUNT / FREQUENCY", font=("Arial", 11, "bold"), text_color=("#94A3B8", "#64748B")).grid(row=0, column=1, sticky="w")
+CTkLabel(headers_frame, text="LAST PAYMENT", font=("Arial", 11, "bold"), text_color=("#94A3B8", "#64748B")).grid(row=0, column=2, sticky="w")
+CTkLabel(headers_frame, text="CONFIDENCE", font=("Arial", 11, "bold"), text_color=("#94A3B8", "#64748B")).grid(row=0, column=3, sticky="e")
 
-commitments_scroll = CTkScrollableFrame(tx_list_container, fg_color="transparent", corner_radius=0)
+commitments_scroll = CTkScrollableFrame(tx_list_container, fg_color=("#F8FAFC", "#0F172A"), corner_radius=0)
 commitments_scroll.pack(fill="both", expand=True)
 
 
@@ -695,20 +873,20 @@ def open_commitment_details(item):
         font=("Arial", 12, "bold"),
         text_color="#0D9488",
         fg_color="transparent",
-        hover_color="#F1F5F9",
+        hover_color=("#F1F5F9", "#334155"),
         anchor="w",
         height=28,
         command=show_list_view,
     )
     back_btn.pack(anchor="w", pady=(0, 10))
 
-    CTkLabel(tx_details_container, text="INVESTIGATION", font=("Arial", 11, "bold"), text_color="#94A3B8").pack(anchor="w", pady=(0, 2))
-    CTkLabel(tx_details_container, text=item["name"], font=("Arial", 28, "bold"), text_color="#0F172A").pack(anchor="w", pady=(0, 2))
+    CTkLabel(tx_details_container, text="INVESTIGATION", font=("Arial", 11, "bold"), text_color=("#94A3B8", "#64748B")).pack(anchor="w", pady=(0, 2))
+    CTkLabel(tx_details_container, text=item["name"], font=("Arial", 28, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(anchor="w", pady=(0, 2))
 
     descriptor = item["name"].upper().replace(" ", "")
-    CTkLabel(tx_details_container, text=f"{descriptor} · evidence-based recurring payment review", font=("Arial", 12), text_color="#64748B").pack(anchor="w", pady=(0, 18))
+    CTkLabel(tx_details_container, text=f"{descriptor} · evidence-based recurring payment review", font=("Arial", 12), text_color=("#64748B", "#94A3B8")).pack(anchor="w", pady=(0, 18))
 
-    hero_card = CTkFrame(tx_details_container, fg_color="#FFFFFF", corner_radius=12, border_width=1, border_color="#F1F5F9")
+    hero_card = CTkFrame(tx_details_container, fg_color=("#FFFFFF", "#1E293B"), corner_radius=12, border_width=1, border_color=("#F1F5F9", "#334155"))
     hero_card.pack(fill="x", pady=(0, 16))
 
     hero_left = CTkFrame(hero_card, fg_color="transparent")
@@ -723,10 +901,10 @@ def open_commitment_details(item):
     amt_freq_frame = CTkFrame(hero_info, fg_color="transparent")
     amt_freq_frame.pack(anchor="w")
 
-    CTkLabel(amt_freq_frame, text=item["amount"], font=("Arial", 22, "bold"), text_color="#0F172A").pack(side="left")
-    CTkLabel(amt_freq_frame, text=f" /{item['frequency']}", font=("Arial", 13), text_color="#64748B").pack(side="left", padx=(2, 0))
+    CTkLabel(amt_freq_frame, text=item["amount"], font=("Arial", 22, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(side="left")
+    CTkLabel(amt_freq_frame, text=f" /{item['frequency']}", font=("Arial", 13), text_color=("#64748B", "#94A3B8")).pack(side="left", padx=(2, 0))
 
-    CTkLabel(hero_info, text=f"Estimated next payment: {item['date']}", font=("Arial", 11), text_color="#64748B").pack(anchor="w", pady=(2, 6))
+    CTkLabel(hero_info, text=f"Estimated next payment: {item['date']}", font=("Arial", 11), text_color=("#64748B", "#94A3B8")).pack(anchor="w", pady=(2, 6))
 
     conf_badge = CTkLabel(hero_info, text="HIGH CONFIDENCE", font=("Arial", 9, "bold"), fg_color="#DCFCE7", text_color="#166534", corner_radius=6, padx=8, pady=2)
     conf_badge.pack(anchor="w")
@@ -738,8 +916,8 @@ def open_commitment_details(item):
     freq_str = item["frequency"].lower()
     annual_cost = raw_amt if freq_str == "annual" else (raw_amt * 4 if freq_str == "quarterly" else raw_amt * 12)
 
-    CTkLabel(hero_right, text="Annual cost", font=("Arial", 11), text_color="#94A3B8", anchor="e").pack(anchor="e")
-    CTkLabel(hero_right, text=f"₹{int(round(annual_cost)):,}", font=("Arial", 20, "bold"), text_color="#0F172A", anchor="e").pack(anchor="e")
+    CTkLabel(hero_right, text="Annual cost", font=("Arial", 11), text_color=("#94A3B8", "#64748B"), anchor="e").pack(anchor="e")
+    CTkLabel(hero_right, text=f"₹{int(round(annual_cost)):,}", font=("Arial", 20, "bold"), text_color=("#0F172A", "#F8FAFC"), anchor="e").pack(anchor="e")
 
     history_list = item.get("history", [])
     if not history_list and cursor:
@@ -755,11 +933,11 @@ def open_commitment_details(item):
     if not history_list:
         history_list = [{"date": item["date"], "description": item["name"].upper(), "amount": item["amount"]}]
 
-    history_card = CTkFrame(tx_details_container, fg_color="#FFFFFF", corner_radius=12, border_width=1, border_color="#F1F5F9")
+    history_card = CTkFrame(tx_details_container, fg_color=("#FFFFFF", "#1E293B"), corner_radius=12, border_width=1, border_color=("#F1F5F9", "#334155"))
     history_card.pack(fill="x", pady=(0, 16), padx=1)
 
-    CTkLabel(history_card, text="Payment history", font=("Arial", 15, "bold"), text_color="#0F172A").pack(anchor="w", padx=20, pady=(15, 2))
-    CTkLabel(history_card, text=f"Matched {len(history_list)} payment{'s' if len(history_list) != 1 else ''} for {item['name']} with a {item['frequency']} billing pattern.", font=("Arial", 12), text_color="#64748B", wraplength=700, justify="left").pack(anchor="w", padx=20, pady=(0, 15))
+    CTkLabel(history_card, text="Payment history", font=("Arial", 15, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(anchor="w", padx=20, pady=(15, 2))
+    CTkLabel(history_card, text=f"Matched {len(history_list)} payment{'s' if len(history_list) != 1 else ''} for {item['name']} with a {item['frequency']} billing pattern.", font=("Arial", 12), text_color=("#64748B", "#94A3B8"), wraplength=700, justify="left").pack(anchor="w", padx=20, pady=(0, 15))
 
     for idx, hist in enumerate(history_list):
         is_latest = idx == (len(history_list) - 1)
@@ -770,29 +948,29 @@ def open_commitment_details(item):
         hist_left.pack(side="left")
 
         CTkLabel(hist_left, text="•", font=("Arial", 16, "bold"), text_color="#10B981").pack(side="left", padx=(0, 10))
-        CTkLabel(hist_left, text=hist["date"], font=("Arial", 12, "bold"), text_color="#334155").pack(side="left", padx=(0, 20))
-        CTkLabel(hist_left, text=hist.get("description", item["name"].upper()), font=("Arial", 11), text_color="#64748B").pack(side="left")
+        CTkLabel(hist_left, text=hist["date"], font=("Arial", 12, "bold"), text_color=("#334155", "#CBD5E1")).pack(side="left", padx=(0, 20))
+        CTkLabel(hist_left, text=hist.get("description", item["name"].upper()), font=("Arial", 11), text_color=("#64748B", "#94A3B8")).pack(side="left")
 
         hist_right = CTkFrame(hist_row, fg_color="transparent")
         hist_right.pack(side="right")
-        CTkLabel(hist_right, text=hist["amount"], font=("Arial", 13, "bold"), text_color="#0F172A").pack(side="left", padx=(0, 8))
+        CTkLabel(hist_right, text=hist["amount"], font=("Arial", 13, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(side="left", padx=(0, 8))
 
         if is_latest:
             CTkLabel(hist_right, text="Latest", font=("Arial", 10, "bold"), fg_color="#DCFCE7", text_color="#166534", corner_radius=6, padx=6, pady=1).pack(side="left")
 
         if not is_latest:
-            CTkFrame(history_card, fg_color="#F8FAFC", height=1).pack(fill="x", padx=20, pady=(2, 2))
+            CTkFrame(history_card, fg_color=("#F8FAFC", "#334155"), height=1).pack(fill="x", padx=20, pady=(2, 2))
 
     CTkFrame(history_card, fg_color="transparent", height=10).pack()
 
-    cancel_card = CTkFrame(tx_details_container, fg_color="#FFFFFF", corner_radius=12, border_width=1, border_color="#F1F5F9")
+    cancel_card = CTkFrame(tx_details_container, fg_color=("#FFFFFF", "#1E293B"), corner_radius=12, border_width=1, border_color=("#F1F5F9", "#334155"))
     cancel_card.pack(fill="x", pady=(0, 20), ipadx=10, ipady=10)
 
-    CTkLabel(cancel_card, text="GUIDED CANCELLATION", font=("Arial", 11, "bold"), text_color="#94A3B8").pack(anchor="w", padx=20, pady=(15, 2))
-    CTkLabel(cancel_card, text="How to stop this payment", font=("Arial", 16, "bold"), text_color="#0F172A").pack(anchor="w", padx=20, pady=(0, 10))
+    CTkLabel(cancel_card, text="GUIDED CANCELLATION", font=("Arial", 11, "bold"), text_color=("#94A3B8", "#64748B")).pack(anchor="w", padx=20, pady=(15, 2))
+    CTkLabel(cancel_card, text="How to stop this payment", font=("Arial", 16, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(anchor="w", padx=20, pady=(0, 10))
 
     pay_mech = item.get("payment_mechanism", "Card recurring")
-    CTkLabel(cancel_card, text=f"  ✓  Payment mechanism: {pay_mech}  ", font=("Arial", 11, "bold"), fg_color="#F1F5F9", text_color="#334155", corner_radius=8, height=32).pack(anchor="w", padx=20, pady=(0, 15))
+    CTkLabel(cancel_card, text=f"  ✓  Payment mechanism: {pay_mech}  ", font=("Arial", 11, "bold"), fg_color=("#F1F5F9", "#334155"), text_color=("#334155", "#F8FAFC"), corner_radius=8, height=32).pack(anchor="w", padx=20, pady=(0, 15))
 
     default_steps = [
         f"Log into your {item['name']} account on their official website or app.",
@@ -806,8 +984,8 @@ def open_commitment_details(item):
         step_row = CTkFrame(cancel_card, fg_color="transparent")
         step_row.pack(fill="x", padx=20, pady=5)
 
-        CTkLabel(step_row, text=str(idx), font=("Arial", 11, "bold"), fg_color="#0F172A", text_color="#FFFFFF", width=22, height=22, corner_radius=11).pack(side="left", padx=(0, 12), anchor="n")
-        CTkLabel(step_row, text=step_text, font=("Arial", 12), text_color="#334155", anchor="w", wraplength=650, justify="left").pack(side="left", fill="x", expand=True)
+        CTkLabel(step_row, text=str(idx), font=("Arial", 11, "bold"), fg_color=("#0F172A", "#F8FAFC"), text_color=("#FFFFFF", "#0F172A"), width=22, height=22, corner_radius=11).pack(side="left", padx=(0, 12), anchor="n")
+        CTkLabel(step_row, text=step_text, font=("Arial", 12), text_color=("#334155", "#CBD5E1"), anchor="w", wraplength=650, justify="left").pack(side="left", fill="x", expand=True)
 
     warning_box = CTkFrame(cancel_card, fg_color="#FEF3C7", corner_radius=8, border_width=1, border_color="#FDE68A")
     warning_box.pack(fill="x", padx=20, pady=(18, 15))
@@ -827,7 +1005,7 @@ def render_commitments(items):
     count_label.configure(text=f"{len(items)} found")
 
     for item in items:
-        row_card = CTkFrame(commitments_scroll, fg_color="#FFFFFF", corner_radius=10, height=58)
+        row_card = CTkFrame(commitments_scroll, fg_color=("#FFFFFF", "#1E293B"), corner_radius=10, height=58)
         row_card.pack(fill="x", pady=4, padx=2)
         row_card.pack_propagate(False)
 
@@ -840,10 +1018,10 @@ def render_commitments(items):
         text_box = CTkFrame(left_box, fg_color="transparent")
         text_box.pack(side="left")
 
-        name_lbl = CTkLabel(text_box, text=item["name"], font=("Arial", 13, "bold"), text_color="#0F172A", anchor="w")
+        name_lbl = CTkLabel(text_box, text=item["name"], font=("Arial", 13, "bold"), text_color=("#0F172A", "#F8FAFC"), anchor="w")
         name_lbl.pack(anchor="w")
 
-        sub_lbl = CTkLabel(text_box, text=f"{item['frequency']} · {item['category']}", font=("Arial", 11), text_color="#64748B", anchor="w")
+        sub_lbl = CTkLabel(text_box, text=f"{item['frequency']} · {item['category']}", font=("Arial", 11), text_color=("#64748B", "#94A3B8"), anchor="w")
         sub_lbl.pack(anchor="w")
 
         right_box = CTkFrame(row_card, fg_color="transparent")
@@ -852,13 +1030,13 @@ def render_commitments(items):
         val_box = CTkFrame(right_box, fg_color="transparent")
         val_box.pack(side="left", padx=(0, 15))
 
-        amt_lbl = CTkLabel(val_box, text=item["amount"], font=("Arial", 13, "bold"), text_color="#0F172A", anchor="e")
+        amt_lbl = CTkLabel(val_box, text=item["amount"], font=("Arial", 13, "bold"), text_color=("#0F172A", "#F8FAFC"), anchor="e")
         amt_lbl.pack(anchor="e")
 
-        dt_lbl = CTkLabel(val_box, text=item["date"], font=("Arial", 11), text_color="#64748B", anchor="e")
+        dt_lbl = CTkLabel(val_box, text=item["date"], font=("Arial", 11), text_color=("#64748B", "#94A3B8"), anchor="e")
         dt_lbl.pack(anchor="e")
 
-        chevron = CTkLabel(right_box, text="›", font=("Arial", 18), text_color="#94A3B8")
+        chevron = CTkLabel(right_box, text="›", font=("Arial", 18), text_color=("#94A3B8", "#64748B"))
         chevron.pack(side="right")
 
         bind_click_recursive(row_card, lambda e, it=item: open_commitment_details(it))
@@ -893,11 +1071,11 @@ render_commitments(commitments_data)
 # ==========================================
 screen_alerts = CTkFrame(screens_container, fg_color="transparent")
 
-CTkLabel(screen_alerts, text="SIGNALS", font=("Arial", 11, "bold"), text_color="#94A3B8").pack(anchor="w", pady=(0, 2))
-CTkLabel(screen_alerts, text="Alerts & insights", font=("Arial", 26, "bold"), text_color="#0F172A").pack(anchor="w", pady=(0, 2))
-CTkLabel(screen_alerts, text="Understand what changed before it quietly costs you more.", font=("Arial", 13), text_color="#64748B").pack(anchor="w", pady=(0, 15))
+CTkLabel(screen_alerts, text="SIGNALS", font=("Arial", 11, "bold"), text_color=("#94A3B8", "#64748B")).pack(anchor="w", pady=(0, 2))
+CTkLabel(screen_alerts, text="Alerts & insights", font=("Arial", 26, "bold"), text_color=("#0F172A", "#F8FAFC")).pack(anchor="w", pady=(0, 2))
+CTkLabel(screen_alerts, text="Understand what changed before it quietly costs you more.", font=("Arial", 13), text_color=("#64748B", "#94A3B8")).pack(anchor="w", pady=(0, 15))
 
-alerts_scroll = CTkScrollableFrame(screen_alerts, fg_color="transparent", corner_radius=0)
+alerts_scroll = CTkScrollableFrame(screen_alerts, fg_color=("#F8FAFC", "#0F172A"), corner_radius=0)
 alerts_scroll.pack(fill="both", expand=True)
 
 
@@ -968,7 +1146,7 @@ def render_alerts_feed():
     alerts_data = calculate_dynamic_alerts(commitments_data)
 
     if not alerts_data:
-        CTkLabel(alerts_scroll, text="No alerts detected in your transaction history.", font=("Arial", 14), text_color="#64748B").pack(pady=40)
+        CTkLabel(alerts_scroll, text="No alerts detected in your transaction history.", font=("Arial", 14), text_color=("#64748B", "#94A3B8")).pack(pady=40)
         return
 
     grouped = {}
@@ -980,12 +1158,12 @@ def render_alerts_feed():
         sep_frame = CTkFrame(alerts_scroll, fg_color="transparent")
         sep_frame.pack(fill="x", pady=(12, 8))
 
-        CTkFrame(sep_frame, fg_color="#E2E8F0", height=1).pack(side="left", fill="x", expand=True, padx=(0, 10))
-        CTkLabel(sep_frame, text=f"───  {format_date_label(d_str)}  ───", font=("Arial", 11, "bold"), text_color="#64748B").pack(side="left")
-        CTkFrame(sep_frame, fg_color="#E2E8F0", height=1).pack(side="right", fill="x", expand=True, padx=(10, 0))
+        CTkFrame(sep_frame, fg_color=("#E2E8F0", "#334155"), height=1).pack(side="left", fill="x", expand=True, padx=(0, 10))
+        CTkLabel(sep_frame, text=f"───  {format_date_label(d_str)}  ───", font=("Arial", 11, "bold"), text_color=("#64748B", "#94A3B8")).pack(side="left")
+        CTkFrame(sep_frame, fg_color=("#E2E8F0", "#334155"), height=1).pack(side="right", fill="x", expand=True, padx=(10, 0))
 
         for alert in grouped[d_str]:
-            card = CTkFrame(alerts_scroll, fg_color="#FFFFFF", corner_radius=12, border_width=1, border_color="#F1F5F9")
+            card = CTkFrame(alerts_scroll, fg_color=("#FFFFFF", "#1E293B"), corner_radius=12, border_width=1, border_color=("#F1F5F9", "#334155"))
             card.pack(fill="x", pady=5, padx=2)
 
             left_frame = CTkFrame(card, fg_color="transparent")
@@ -996,13 +1174,13 @@ def render_alerts_feed():
             text_box = CTkFrame(left_frame, fg_color="transparent")
             text_box.pack(side="left")
 
-            CTkLabel(text_box, text=alert["title"], font=("Arial", 13, "bold"), text_color="#0F172A", anchor="w").pack(anchor="w")
-            CTkLabel(text_box, text=alert["subtitle"], font=("Arial", 11), text_color="#64748B", anchor="w", wraplength=450, justify="left").pack(anchor="w")
+            CTkLabel(text_box, text=alert["title"], font=("Arial", 13, "bold"), text_color=("#0F172A", "#F8FAFC"), anchor="w").pack(anchor="w")
+            CTkLabel(text_box, text=alert["subtitle"], font=("Arial", 11), text_color=("#64748B", "#94A3B8"), anchor="w", wraplength=450, justify="left").pack(anchor="w")
 
             right_frame = CTkFrame(card, fg_color="transparent")
             right_frame.pack(side="right", padx=15, pady=15)
 
-            CTkLabel(right_frame, text=f"Merchant: {alert['merchant']}   Observed: {alert['date']}   Change: {alert['change']}", font=("Arial", 11), text_color="#64748B").pack(side="left", padx=(0, 15))
+            CTkLabel(right_frame, text=f"Merchant: {alert['merchant']}   Observed: {alert['date']}   Change: {alert['change']}", font=("Arial", 11), text_color=("#64748B", "#94A3B8")).pack(side="left", padx=(0, 15))
 
             investigate_btn = CTkButton(
                 right_frame,
@@ -1010,7 +1188,7 @@ def render_alerts_feed():
                 font=("Arial", 12, "bold"),
                 text_color="#0D9488",
                 fg_color="transparent",
-                hover_color="#F1F5F9",
+                hover_color=("#F1F5F9", "#334155"),
                 width=100,
                 height=32,
                 command=lambda item=alert["item"]: navigate_to_investigation(item),
@@ -1038,11 +1216,9 @@ menu_buttons = {}
 
 
 def select_menu(selected_name):
-    # Hide all screens from the grid
     for screen in screens.values():
         screen.grid_forget()
 
-    # Show only the active screen
     screens[selected_name].grid(row=0, column=0, sticky="nsew")
 
     if selected_name == "Transactions":
@@ -1054,7 +1230,7 @@ def select_menu(selected_name):
         if name == selected_name:
             btn.configure(fg_color="#1814F3", text_color="#FFFFFF")
         else:
-            btn.configure(fg_color="transparent", text_color="#718EBF")
+            btn.configure(fg_color="transparent", text_color=("#718EBF", "#94A3B8"))
 
 
 menu_options = ["Dashboard", "Transactions", "Alerts & Insights"]
@@ -1066,8 +1242,8 @@ for name in menu_options:
         font=("Arial", 14, "bold"),
         corner_radius=12,
         fg_color="transparent",
-        text_color="#718EBF",
-        hover_color="#E0E7FF",
+        text_color=("#718EBF", "#94A3B8"),
+        hover_color=("#E0E7FF", "#334155"),
         anchor="w",
         height=42,
         command=lambda n=name: select_menu(n),
@@ -1080,7 +1256,7 @@ select_menu("Dashboard")
 
 
 # ==========================================
-# 5. CLEAN CLOSE PROTOCOL (PREVENT DPI ERRORS)
+# 5. CLEAN CLOSE PROTOCOL
 # ==========================================
 def on_closing():
     plt.close('all')
