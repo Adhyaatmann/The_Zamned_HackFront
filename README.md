@@ -7,30 +7,30 @@
 
 ## Overview
 
-Modern digital subscriptions frequently rely on obscure billing narratives and sneaky pricing escalations (dark patterns)[cite: 2]. **The Missing Rupee** is a desktop personal finance dashboard that extracts debit history from a PostgreSQL/Supabase database[cite: 2, 3], passes cryptic transaction strings to Google Gemini to parse and identify repeating commitments[cite: 2], and delivers an actionable interface to track and cancel unwanted debits[cite: 3].
+Modern digital subscriptions frequently rely on obscure billing narratives and sneaky pricing escalations (dark patterns). **The Missing Rupee** is a desktop personal finance dashboard that extracts debit history from a PostgreSQL/Supabase database, passes cryptic transaction strings to Google Gemini to parse and identify recurring commitments, and delivers an actionable interface to track and cancel unwanted debits.
 
 ---
 
 ## Key Features
 
-- **AI-Powered Descriptor Normalization**: Uses `gemini-3.8-flash` to clean cryptic bank descriptors (e.g., `ACH DEBIT PAYPAL *NETFLIX DIGI` → `Netflix`) and extract category, billing cadence, and latest transaction dates[cite: 2].
+- **AI-Powered Descriptor Normalization**: Uses `gemini-3.8-flash` to clean cryptic bank descriptors (e.g., `ACH DEBIT PAYPAL *NETFLIX DIGI` → `Netflix`) and extract category, billing cadence, and latest transaction dates.
 - **Anti-Dark Pattern & Anomaly Alerts**:
-  - **Price Hikes**: Detects whenever a recurring charge quietly increases (e.g., `₹649 → ₹799 (+23%)`)[cite: 3].
-  - **Free-Trial Conversions**: Flags when a `₹0` trial converts into a paid recurring billing charge[cite: 3].
-  - **New Recurring Debits**: Highlights newly started subscription mandates[cite: 3].
-- **Indian Payment Mechanism Detection**: Categorizes debits by payment rail (UPI Autopay, Card recurring, e-Mandate)[cite: 2, 3].
-- **Guided Cancellation Instructions**: Generates exact, merchant-specific step-by-step navigation instructions to cancel or turn off auto-renew[cite: 2, 3].
-- **Financial Health Summary**: Aggregates recurring commitments to estimate overall monthly spend and annualized baseline cost[cite: 3].
-- **Offline / Quota Fallback**: Features a built-in mock dataset to keep the desktop interface functional if database connectivity or LLM API calls fail[cite: 3].
+  - **Price Hikes**: Detects whenever a recurring charge quietly increases (e.g., `₹649 → ₹799 (+23%)`).
+  - **Free-Trial Conversions**: Flags when a `₹0` trial converts into a paid recurring billing charge.
+  - **New Recurring Debits**: Highlights newly started subscription mandates.
+- **Indian Payment Mechanism Detection**: Categorizes debits by payment rail (UPI Autopay, Card recurring, e-Mandate).
+- **Guided Cancellation Instructions**: Generates exact, merchant-specific step-by-step navigation instructions to cancel or turn off auto-renew.
+- **Financial Health Summary**: Aggregates recurring commitments to estimate overall monthly spend and annualized baseline cost.
+- **Offline / Quota Fallback**: Features a built-in mock dataset to keep the desktop interface functional if database connectivity or LLM API calls fail.
 
 ---
 
 ## Tech Stack & Dependencies
 
-- **Frontend / GUI**: `customtkinter`(modern desktop UI components), `Pillow` (image loading and asset rendering)[cite: 3]
-- **AI Analysis**: `google-genai`(Gemini API SDK for parsing bank statements)[cite: 2]
-- **Database & Driver**: `psycopg2-binary`(PostgreSQL client driver)[cite: 2, 3] and  `supabase `
-- **Configuration**: `python-dotenv`(management of local .env variables)[cite: 2, 3]
+- **Frontend / GUI**: `customtkinter`(modern desktop UI components), `Pillow` (image loading and asset rendering)
+- **AI Analysis**: `google-genai`(Gemini API SDK for parsing bank statements)
+- **Database & Driver**: `psycopg2-binary`(PostgreSQL client driver) and  `supabase `
+- **Configuration**: `python-dotenv`(management of local .env variables)
 
 ---
 
@@ -162,7 +162,7 @@ DATABASE_URL="postgresql://<username>:<password>@<host>:<port>/<dbname>"
 GEMINI_API_KEY="your-gemini-api-key-here"
 ```
 
-> **Note**: Ensure the image files (`App Logo.jpeg`, `bell.png`, `profile.png`, `settings.png`) are placed inside the `assets/` folder[cite: 3].
+> **Note**: Ensure the image files (`App Logo.jpeg`, `bell.png`, `profile.png`, `settings.png`) are placed inside the `assets/` folder.
 
 ---
 
