@@ -430,10 +430,10 @@ def calculate_dashboard_metrics(commitments):
     }
 
 
-def create_card(parent, icon_filename, default_symbol, icon_bg, label_text, value_text, footer_text):
+def create_card(parent, icon_filename, default_symbol, icon_bg, label_text, value_text, footer_text, icon_size=(20, 20)):
     card = CTkFrame(parent, fg_color=("#FFFFFF", "#1E293B"), corner_radius=16)
 
-    img_icon = load_icon(icon_filename, (20, 20)) if icon_filename else None
+    img_icon = load_icon(icon_filename, size=icon_size) if icon_filename else None
 
     if img_icon:
         icon_badge = CTkLabel(
@@ -478,13 +478,12 @@ cards_frame.pack(fill="x", pady=(0, 15))
 for i in range(3):
     cards_frame.grid_columnconfigure(i, weight=1)
 
-card1 = create_card(cards_frame, "recurring.png", "🔄", "#E2E8F0", "Monthly recurring spend", metrics["monthly_str"], "Across identified commitments")
+card1 = create_card(cards_frame, "recurring.png", "🔄", "#E2E8F0", "Monthly recurring spend", metrics["monthly_str"], "Across identified commitments", icon_size=(20, 20))
+card2 = create_card(cards_frame, "annual.png", "₹", "#DCFCE7", "Annual commitment", metrics["annual_str"], "Your recurring baseline", icon_size=(26, 26))
+card3 = create_card(cards_frame, "subscriptions.png", "✓", "#E0F2FE", "Active subscriptions", metrics["active_str"], metrics["merchants_footer"], icon_size=(25, 25))
+
 card1.grid(row=0, column=0, padx=(0, 10), sticky="ew")
-
-card2 = create_card(cards_frame, "annual.png", "₹", "#DCFCE7", "Annual commitment", metrics["annual_str"], "Your recurring baseline")
 card2.grid(row=0, column=1, padx=5, sticky="ew")
-
-card3 = create_card(cards_frame, "subscriptions.png", "✓", "#E0F2FE", "Active subscriptions", metrics["active_str"], metrics["merchants_footer"])
 card3.grid(row=0, column=2, padx=(10, 0), sticky="ew")
 
 # --- DASHBOARD MATPLOTLIB CHARTS FRAME ---
@@ -993,7 +992,14 @@ def open_commitment_details(item):
     warn_inner = CTkFrame(warning_box, fg_color="transparent")
     warn_inner.pack(fill="x", padx=12, pady=10)
 
-    CTkLabel(warn_inner, text="⚠️", font=("Arial", 14)).pack(side="left", anchor="n", padx=(0, 8))
+    # Load warning.png icon image (with emoji fallback if file is missing)
+    warn_img = load_icon("warning.png", (20, 20))
+    if warn_img:
+        warn_icon = CTkLabel(warn_inner, text="", image=warn_img)
+    else:
+        warn_icon = CTkLabel(warn_inner, text="⚠️", font=("Arial", 14))
+    warn_icon.pack(side="left", anchor="n", padx=(0, 8))
+
     warn_text = "Important distinction: Revoking a mandate may stop future debits but does not automatically terminate the underlying merchant contract."
     CTkLabel(warn_inner, text=warn_text, font=("Arial", 11, "bold"), text_color="#92400E", wraplength=650, justify="left").pack(side="left", fill="x", expand=True)
 
@@ -1154,6 +1160,9 @@ def render_alerts_feed():
         d = alert["date"]
         grouped.setdefault(d, []).append(alert)
 
+    # Pre-load warning icon image if available
+    warn_img = load_icon("warning.png", (20, 20))
+
     for d_str in sorted(grouped.keys(), reverse=True):
         sep_frame = CTkFrame(alerts_scroll, fg_color="transparent")
         sep_frame.pack(fill="x", pady=(12, 8))
@@ -1169,7 +1178,29 @@ def render_alerts_feed():
             left_frame = CTkFrame(card, fg_color="transparent")
             left_frame.pack(side="left", padx=15, pady=15)
 
-            CTkLabel(left_frame, text="⚠️", font=("Arial", 14), fg_color="#FEF2F2", text_color="#0F172A", width=36, height=36, corner_radius=18).pack(side="left", padx=(0, 12))
+            # Use warning.png image icon if present, otherwise fallback to emoji
+            if warn_img:
+                icon_badge = CTkLabel(
+                    left_frame,
+                    text="",
+                    image=warn_img,
+                    fg_color="#FEF2F2",
+                    width=36,
+                    height=36,
+                    corner_radius=18,
+                )
+            else:
+                icon_badge = CTkLabel(
+                    left_frame,
+                    text="⚠️",
+                    font=("Arial", 14),
+                    fg_color="#FEF2F2",
+                    text_color="#0F172A",
+                    width=36,
+                    height=36,
+                    corner_radius=18,
+                )
+            icon_badge.pack(side="left", padx=(0, 12))
 
             text_box = CTkFrame(left_frame, fg_color="transparent")
             text_box.pack(side="left")
